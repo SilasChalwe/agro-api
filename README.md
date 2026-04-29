@@ -10,6 +10,12 @@ npm start
 ```
 Open `http://localhost:3000/map.html`.
 
+## Deploy to Vercel (Serverless)
+1. Push this repo to GitHub.
+2. Import the repo in Vercel.
+3. Deploy (the included `vercel.json` routes `/v1/*` to `api.js` and serves `map.html` at `/`).
+4. Use your Vercel URL (for example `https://your-project.vercel.app`) on your phone.
+
 Default demo auth headers:
 - `x-tenant-id: demo-tenant`
 - `x-api-key: demo-key`
