@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "functions": {
+    "api.js": {
+      "maxDuration": 10
+    }
+  },
+  "routes": [
+    {
+      "src": "/v1/(.*)",
+      "dest": "/api.js"
+    },
+    {
+      "src": "/map.html",
+      "dest": "/map.html"
+    },
+    {
+      "src": "/",
+      "dest": "/map.html"
+    }
+  ]
+}
