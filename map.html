@@ -1,61 +1,28 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <title>Farm Map</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <style>
-    #map { height: 100vh; }
-    button { position: absolute; top: 10px; left: 10px; z-index: 1000; }
-  </style>
-</head>
+<head><title>Agro API - Phone GPS Demo</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" /><style>body{margin:0;font-family:Arial}#map{height:100vh}.controls{position:absolute;top:10px;left:10px;z-index:1000;background:#fff;padding:10px;border-radius:8px;display:flex;flex-direction:column;gap:8px;max-width:320px}.status{font-size:12px}.guide{font-size:12px;color:#374151}</style></head>
 <body>
-
-<button onclick="startMapping()">Start</button>
-<button onclick="stopMapping()">Stop</button>
-
+<div class="controls">
+  <div class="guide">Demo mode: no API key needed. Open on phone, enable GPS, tap Start, then move around to draw your geofence.</div>
+  <input id="deviceId" value="phone-demo" />
+  <button onclick="startMapping()">Start Tracking</button>
+  <button onclick="stopMapping()">Stop & Save Geofence</button>
+  <div id="status" class="status">Idle</div>
+</div>
 <div id="map"></div>
-
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script>
-  var map = L.map('map').setView([-15.4167, 28.2833], 13);
-
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-  }).addTo(map);
-
-  let points = [];
-  let polyline;
-
-  function startMapping() {
-    navigator.geolocation.watchPosition((pos) => {
-      let lat = pos.coords.latitude;
-      let lng = pos.coords.longitude;
-
-      points.push([lat, lng]);
-
-      if (polyline) {
-        map.removeLayer(polyline);
-      }
-
-      polyline = L.polyline(points).addTo(map);
-      map.setView([lat, lng], 18);
-    });
-  }
-
-  function stopMapping() {
-    let polygon = L.polygon(points).addTo(map);
-
-    fetch('http://localhost:3000/farms', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ boundary: points })
-    });
-
-    points = [];
-  }
-</script>
-
-</body>
-</html>
+const API_HEADERS={ 'Content-Type':'application/json','x-demo-client':'true' };
+const map=L.map('map').setView([-15.4167,28.2833],13);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
+let points=[],polyline,polygon,watchId=null,trackId=null;const statusEl=document.getElementById('status');const setStatus=(m)=>statusEl.textContent=m;
+async function requireGpsPermission(){
+  if(!navigator.geolocation){setStatus('This device/browser does not support GPS.');return false;}
+  return new Promise((resolve)=>navigator.geolocation.getCurrentPosition(()=>resolve(true),(err)=>{setStatus(`Please turn on GPS/location. (${err.message})`);resolve(false);},{enableHighAccuracy:true,timeout:10000}));
+}
+async function startMapping(){if(watchId!==null)return setStatus('Tracking already running');if(!(await requireGpsPermission())) return;
+const deviceId=document.getElementById('deviceId').value.trim()||'phone-demo';const startResp=await fetch('/v1/tracks/start',{method:'POST',headers:API_HEADERS,body:JSON.stringify({deviceId,label:'phone-demo-session'})});if(!startResp.ok)return setStatus('Could not start track');trackId=(await startResp.json()).trackId;points=[];if(polyline)map.removeLayer(polyline);if(polygon)map.removeLayer(polygon);
+watchId=navigator.geolocation.watchPosition(async(pos)=>{const latitude=pos.coords.latitude,longitude=pos.coords.longitude;points.push([latitude,longitude]);if(polyline)map.removeLayer(polyline);polyline=L.polyline(points,{color:'blue'}).addTo(map);map.setView([latitude,longitude],18);await fetch(`/v1/tracks/${trackId}/point`,{method:'POST',headers:API_HEADERS,body:JSON.stringify({latitude,longitude,accuracy:pos.coords.accuracy,speed:pos.coords.speed,heading:pos.coords.heading,altitude:pos.coords.altitude,timestamp:new Date(pos.timestamp).toISOString()})});setStatus(`Move more: ${points.length} points captured`);},(err)=>setStatus(`GPS error: ${err.message}`),{enableHighAccuracy:true,maximumAge:0,timeout:10000});
+setStatus('Tracking started. Walk/drive around the boundary to create geofence.');}
+async function stopMapping(){if(watchId===null||!trackId)return setStatus('No active session');navigator.geolocation.clearWatch(watchId);watchId=null;if(points.length>=3){if(polygon)map.removeLayer(polygon);polygon=L.polygon(points,{color:'green'}).addTo(map);await fetch('/v1/farms',{method:'POST',headers:API_HEADERS,body:JSON.stringify({name:`demo-farm-${new Date().toISOString()}`,boundary:points})});}
+await fetch(`/v1/tracks/${trackId}/stop`,{method:'POST',headers:API_HEADERS});setStatus(`Saved geofence with ${points.length} points.`);trackId=null;points=[];}
+</script></body></html>
