@@ -1,13 +1,14 @@
 {
   "name": "agro-api",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Multi-tenant open-source geofencing and movement tracking API",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "keywords": [],
-  "author": "",
+  "author": "Chalwe Silas, CEO & Founder of Covian Hive Technologies",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
