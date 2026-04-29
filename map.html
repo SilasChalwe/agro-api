@@ -6,8 +6,8 @@
 <div class="controls">
   <div class="guide">Demo mode: no API key needed. Open on phone, enable GPS, tap Start, then move around to draw your geofence.</div>
   <input id="trackName" placeholder="track name" value="phone-demo" />
-  <button onclick="startMapping()">Start Tracking</button>
-  <button onclick="stopMapping()">Stop & Save Geofence</button>
+  <button id="startBtn" onclick="startMapping()">Start Tracking</button>
+  <button id="stopBtn" onclick="stopMapping()" style="display:none">Stop & Save Geofence</button>
   <div class="status" id="status"></div>
 </div>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -16,9 +16,27 @@ const API_HEADERS={"Content-Type":"application/json","x-tenant-id":"demo"};
 const DEFAULT_CENTER=[-12.8167,28.2000]; // Kitwe
 const map=L.map('map').setView(DEFAULT_CENTER,13);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{maxZoom:20,attribution:'&copy; OpenStreetMap contributors &copy; CARTO'}).addTo(map);
-let watchId=null,trackId=null,points=[],polyline=null,polygon=null;
+let watchId=null,trackId=null,points=[],polyline=null,polygon=null,userMarker=null;
+const TARGET_ACCURACY_METERS=1;
 const statusEl=document.getElementById('status');
+const startBtn=document.getElementById('startBtn');
+const stopBtn=document.getElementById('stopBtn');
 function setStatus(t){statusEl.textContent=t;}
+function setTrackingUi(isTracking){
+  startBtn.style.display=isTracking?'none':'block';
+  stopBtn.style.display=isTracking?'block':'none';
+}
+
+function drawUserLocation(latitude,longitude){
+  if(userMarker) map.removeLayer(userMarker);
+  userMarker=L.circleMarker([latitude,longitude],{
+    radius:8,
+    color:'#16a34a',
+    fillColor:'#22c55e',
+    fillOpacity:1,
+    weight:2
+  }).addTo(map);
+}
 
 async function centerToCurrentLocation(){
   if(!navigator.geolocation){setStatus('This device/browser does not support GPS.');return;}
@@ -26,7 +44,8 @@ async function centerToCurrentLocation(){
     (pos)=>{
       const {latitude,longitude,accuracy}=pos.coords;
       map.setView([latitude,longitude],16);
-      setStatus(`GPS ready (±${Math.round(accuracy)}m). You are centered near your current location.`);
+      drawUserLocation(latitude,longitude);
+      setStatus(`GPS ready (±${Math.round(accuracy)}m). Target is ±${TARGET_ACCURACY_METERS}m for geofence points.`);
     },
     ()=>setStatus('Could not get location now. Map is showing Kitwe fallback until GPS is enabled.'),
     {enableHighAccuracy:true,timeout:10000,maximumAge:0}
@@ -37,12 +56,13 @@ async function ensureGPS(){
   if(!navigator.geolocation){setStatus('This device/browser does not support GPS.');return false;}
   return new Promise((resolve)=>navigator.geolocation.getCurrentPosition(()=>resolve(true),(err)=>{setStatus(`Please turn on GPS/location. (${err.message})`);resolve(false);},{enableHighAccuracy:true,timeout:10000}));
 }
-async function startMapping(){if(watchId!==null)return setStatus('Already tracking');const ok=await ensureGPS();if(!ok)return;const trackName=document.getElementById('trackName').value||`track-${Date.now()}`;const tr=await fetch('/v1/tracks',{method:'POST',headers:API_HEADERS,body:JSON.stringify({name:trackName})}).then(r=>r.json());trackId=tr.id;points=[];if(polyline)map.removeLayer(polyline);if(polygon)map.removeLayer(polygon);
-watchId=navigator.geolocation.watchPosition(async(pos)=>{const latitude=pos.coords.latitude,longitude=pos.coords.longitude;points.push([latitude,longitude]);if(polyline)map.removeLayer(polyline);polyline=L.polyline(points,{color:'blue'}).addTo(map);map.setView([latitude,longitude],18);await fetch(`/v1/tracks/${trackId}/point`,{method:'POST',headers:API_HEADERS,body:JSON.stringify({latitude,longitude,accuracy:pos.coords.accuracy,speed:pos.coords.speed,heading:pos.coords.heading,altitude:pos.coords.altitude,timestamp:new Date(pos.timestamp).toISOString()})});setStatus(`Move more: ${points.length} points captured`);},(err)=>setStatus(`GPS error: ${err.message}`),{enableHighAccuracy:true,maximumAge:0,timeout:10000});
+async function startMapping(){if(watchId!==null)return setStatus('Already tracking');const ok=await ensureGPS();if(!ok)return;const trackName=document.getElementById('trackName').value||`track-${Date.now()}`;const tr=await fetch('/v1/tracks',{method:'POST',headers:API_HEADERS,body:JSON.stringify({name:trackName})}).then(r=>r.json());trackId=tr.id;points=[];if(polyline)map.removeLayer(polyline);if(polygon)map.removeLayer(polygon);setTrackingUi(true);
+watchId=navigator.geolocation.watchPosition(async(pos)=>{const latitude=pos.coords.latitude,longitude=pos.coords.longitude,accuracy=pos.coords.accuracy;drawUserLocation(latitude,longitude);map.setView([latitude,longitude],18);if(accuracy>TARGET_ACCURACY_METERS){setStatus(`Waiting for better GPS: now ±${Math.round(accuracy)}m, need ±${TARGET_ACCURACY_METERS}m or better.`);return;}points.push([latitude,longitude]);if(polyline)map.removeLayer(polyline);polyline=L.polyline(points,{color:'#f97316'}).addTo(map);await fetch(`/v1/tracks/${trackId}/point`,{method:'POST',headers:API_HEADERS,body:JSON.stringify({latitude,longitude,accuracy,speed:pos.coords.speed,heading:pos.coords.heading,altitude:pos.coords.altitude,timestamp:new Date(pos.timestamp).toISOString()})});setStatus(`Captured ${points.length} geofence point(s) at ±${Math.round(accuracy)}m.`);},(err)=>setStatus(`GPS error: ${err.message}`),{enableHighAccuracy:true,maximumAge:0,timeout:10000});
 setStatus('Tracking started');}
-async function stopMapping(){if(watchId===null||!trackId)return setStatus('No active session');navigator.geolocation.clearWatch(watchId);watchId=null;if(points.length>=3){if(polygon)map.removeLayer(polygon);polygon=L.polygon(points,{color:'green'}).addTo(map);await fetch('/v1/farms',{method:'POST',headers:API_HEADERS,body:JSON.stringify({name:`demo-farm-${new Date().toISOString()}`,boundary:points})});}
+async function stopMapping(){if(watchId===null||!trackId)return setStatus('No active session');navigator.geolocation.clearWatch(watchId);watchId=null;setTrackingUi(false);if(points.length>=3){if(polygon)map.removeLayer(polygon);polygon=L.polygon(points,{color:'#ef4444',fillColor:'#fb923c',fillOpacity:0.25}).addTo(map);await fetch('/v1/farms',{method:'POST',headers:API_HEADERS,body:JSON.stringify({name:`demo-farm-${new Date().toISOString()}`,boundary:points})});}
 await fetch(`/v1/tracks/${trackId}/stop`,{method:'POST',headers:API_HEADERS});setStatus(`Saved. points=${points.length}`);}
 
+setTrackingUi(false);
 centerToCurrentLocation();
 </script>
 </body>
