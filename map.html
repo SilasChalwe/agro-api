@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Farm Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    #map { height: 100vh; }
+    button { position: absolute; top: 10px; left: 10px; z-index: 1000; }
+  </style>
+</head>
+<body>
+
+<button onclick="startMapping()">Start</button>
+<button onclick="stopMapping()">Stop</button>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+  var map = L.map('map').setView([-15.4167, 28.2833], 13);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+  }).addTo(map);
+
+  let points = [];
+  let polyline;
+
+  function startMapping() {
+    navigator.geolocation.watchPosition((pos) => {
+      let lat = pos.coords.latitude;
+      let lng = pos.coords.longitude;
+
+      points.push([lat, lng]);
+
+      if (polyline) {
+        map.removeLayer(polyline);
+      }
+
+      polyline = L.polyline(points).addTo(map);
+      map.setView([lat, lng], 18);
+    });
+  }
+
+  function stopMapping() {
+    let polygon = L.polygon(points).addTo(map);
+
+    fetch('http://localhost:3000/farms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ boundary: points })
+    });
+
+    points = [];
+  }
+</script>
+
+</body>
+</html>
